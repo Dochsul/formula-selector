@@ -1,522 +1,216 @@
-import { useMemo, useRef, useState } from 'react';
-import { BrowserMultiFormatReader } from '@zxing/library';
+import { useEffect, useState } from 'react';
 
-import { isValidBarcode } from './lib/barcode';
-import { calculateNutrition, NutritionInput } from './lib/nutrition';
-import { evaluateSymptomRulesSafe, SymptomInput } from './lib/rules';
-import { mockProducts } from './data/products';
+const API_URL = 'http://localhost:4000';
 
-export type Tab = 'scanner' | 'nutrition' | 'rules' | 'catalog';
+type License = {
+  id: string;
+  userId: string;
+  email: string;
+  key: string;
+  plan: 'monthly' | 'quarterly' | 'yearly';
+  status: 'active' | 'inactive' | 'expired';
+  startedAt: string;
+  expiresAt: string;
+  createdAt: string;
+};
 
 function App() {
-  const [activeTab, setActiveTab] = useState<Tab>('scanner');
-  const [barcode, setBarcode] = useState('5901234123457');
-  const [scanResult, setScanResult] = useState<string | null>(null);
-  const [scanError, setScanError] = useState('');
-  const [search, setSearch] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [mode, setMode] = useState<'register' | 'login' | 'payment'>('register');
+  const [email, setEmail] = useState('user@example.com');
+  const [password, setPassword] = useState('123456');
+  const [plan, setPlan] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly');
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [license, setLicense] = useState<License | null>(null);
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [isScanning, setIsScanning] = useState(false);
+  const register = async () => {
+    setError('');
+    setMessage('');
 
-  const initialNutrition: NutritionInput = {
-    ageMonths: 6,
-    sex: 'm',
-    weightKg: 7,
-    heightCm: 67,
-    activity: 'moderate',
-    norms: 'ru'
-  };
-
-  const [nutritionState, setNutritionState] = useState<NutritionInput>(initialNutrition);
-  const [nutritionResult, setNutritionResult] = useState<ReturnType<typeof calculateNutrition> | null>(
-    calculateNutrition(initialNutrition)
-  );
-
-  const [symptoms, setSymptoms] = useState<SymptomInput>({
-    hasRedFlags: false,
-    cmpaSuspicion: false,
-    severeAllergy: false,
-    colicAndConstipation: false,
-    regurgitation: false,
-    lactoseIntolerance: false
-  });
-
-  const [ruleResult, setRuleResult] = useState<ReturnType<typeof evaluateSymptomRulesSafe> | null>(
-    evaluateSymptomRulesSafe({
-      hasRedFlags: false,
-      cmpaSuspicion: false,
-      severeAllergy: false,
-      colicAndConstipation: false,
-      regurgitation: false,
-      lactoseIntolerance: false
-    })
-  );
-
-  const filteredProducts = useMemo(() => {
-    const lower = search.toLowerCase();
-
-    return mockProducts.filter((product) => {
-      const matchesSearch =
-        product.name.toLowerCase().includes(lower) ||
-        product.brand.toLowerCase().includes(lower) ||
-        product.category.toLowerCase().includes(lower);
-
-      const matchesCategory = categoryFilter === 'all' || product.categoryCode === categoryFilter;
-
-      return matchesSearch && matchesCategory;
+    const res = await fetch(`${API_URL}/api/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
     });
-  }, [search, categoryFilter]);
 
-  const handleValidateBarcode = () => {
-    const validation = isValidBarcode(barcode);
-
-    if (!validation.valid) {
-      setScanError(validation.error || 'Ошибка проверки штрихкода');
-      setScanResult(null);
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.error || 'Registration failed');
       return;
     }
 
-    setScanError('');
-    setScanResult(`Штрихкод корректен: ${validation.format}`);
+    setMessage(`Пользователь создан: ${data.email}`);
+    setMode('login');
   };
 
-  const handleScanLibrary = async () => {
-    if (!videoRef.current) return;
+  const login = async () => {
+    setError('');
+    setMessage('');
 
-    setIsScanning(true);
-    setScanError('');
+    const res = await fetch(`${API_URL}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
 
-    const codeReader = new BrowserMultiFormatReader();
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.error || 'Login failed');
+      return;
+    }
 
-    try {
-      await codeReader.decodeFromVideoDevice(undefined, videoRef.current, (result, error) => {
-        if (result) {
-          const text = result.getText();
-          const validation = isValidBarcode(text);
-
-          if (validation.valid) {
-            setBarcode(text);
-            setScanResult(`Сканировано: ${text} (${validation.format})`);
-            setScanError('');
-            setIsScanning(false);
-            codeReader.reset();
-          } else {
-            setScanError(validation.error || 'Не удалось распознать штрихкод');
-          }
-        }
-
-        if (error && !result) {
-          // normal decode loop, ignore non-fatal errors
-        }
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Не удалось активировать камеру';
-      setScanError(`Не удалось активировать камеру: ${message}`);
+    if (data.activeLicense) {
+      setLicense(data.activeLicense);
+      setMessage('Лицензия активна');
+    } else {
+      setLicense(null);
+      setMessage('Лицензия отсутствует. Перейдите к оплате.');
+      setMode('payment');
     }
   };
 
-  const handleStopScan = () => {
-    setIsScanning(false);
+  const requestPayment = async () => {
+    setError('');
+    setMessage('');
+
+    const res = await fetch(`${API_URL}/api/license/request`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, plan })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.error || 'Payment request failed');
+      return;
+    }
+
+    setMessage(
+      `Сумма: ${data.amount} ${data.currency}. Платёж по тарифу ${data.plan}. Подтвердите оплату через /api/payment/manual-confirm.`
+    );
   };
 
-  const calculateNutritionForForm = () => {
-    const result = calculateNutrition(nutritionState);
-    setNutritionResult(result);
+  const confirmPayment = async () => {
+    setError('');
+    setMessage('');
+
+    const res = await fetch(`${API_URL}/api/payment/manual-confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, plan })
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.error || 'Payment confirmation failed');
+      return;
+    }
+
+    setLicense(data.license);
+    setMessage(`Оплата подтверждена. Ваш ключ: ${data.license.key}`);
   };
 
-  const handleRuleCheck = () => {
-    const result = evaluateSymptomRulesSafe(symptoms);
-    setRuleResult(result);
+  const checkLicense = async () => {
+    if (!license) {
+      setError('Нет активной лицензии');
+      return;
+    }
+
+    const res = await fetch(
+      `${API_URL}/api/license/check?email=${encodeURIComponent(email)}&key=${encodeURIComponent(license.key)}`
+    );
+
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.message || 'License invalid');
+      return;
+    }
+
+    setMessage(`Лицензия активна до ${data.expiresAt}`);
   };
 
-  const toggleSymptom = (key: keyof SymptomInput) => {
-    setSymptoms((prev) => ({
-      ...prev,
-      [key]: !prev[key]
-    }));
-  };
-
-  const tabs: Array<{ key: Tab; label: string }> = [
-    { key: 'scanner', label: 'Сканер' },
-    { key: 'nutrition', label: 'КБЖУ' },
-    { key: 'rules', label: 'Правила' },
-    { key: 'catalog', label: 'Каталог' }
-  ];
+  useEffect(() => {
+    setMessage('');
+    setError('');
+  }, [mode]);
 
   return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="brand">
-          <span className="brand-mark">F</span>
-          <div>
-            <strong>Formula Selector</strong>
-            <small>Детские смеси и питание</small>
-          </div>
+    <div style={{ maxWidth: 840, margin: '40px auto', fontFamily: 'sans-serif', padding: 16 }}>
+      <h1>Formula Selector — License Access</h1>
+
+      <div style={{ marginBottom: 24, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <button onClick={() => setMode('register')}>Регистрация</button>
+        <button onClick={() => setMode('login')}>Вход</button>
+        <button onClick={() => setMode('payment')}>Оплата</button>
+      </div>
+
+      {error && (
+        <div style={{ background: '#ffe6e6', color: '#8f1d1d', padding: 12, borderRadius: 8, marginBottom: 16 }}>
+          {error}
         </div>
+      )}
 
-        <nav className="tabs">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              className={activeTab === tab.key ? 'tab active' : 'tab'}
-              onClick={() => setActiveTab(tab.key)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-      </header>
+      {message && (
+        <div style={{ background: '#eafaf1', color: '#0d6b3f', padding: 12, borderRadius: 8, marginBottom: 16 }}>
+          {message}
+        </div>
+      )}
 
-      <main className="content">
-        {activeTab === 'scanner' && (
-          <section className="panel">
-            <div className="panel-header">
-              <h2>Сканер штрихкода</h2>
-              <span className="tag">EAN-8 / EAN-13</span>
-            </div>
+      {(mode === 'register' || mode === 'login' || mode === 'payment') && (
+        <div style={{ display: 'grid', gap: 12 }}>
+          <label>
+            Email
+            <input value={email} onChange={(e) => setEmail(e.target.value)} style={{ width: '100%', padding: 10 }} />
+          </label>
 
-            <div className="scanner-grid">
-              <div className="scanner-box">
-                <video ref={videoRef} className="video" muted playsInline />
-              </div>
+          <label>
+            Password
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              style={{ width: '100%', padding: 10 }}
+            />
+          </label>
 
-              <div className="scanner-controls">
-                <label className="label">Штрихкод</label>
-                <input
-                  value={barcode}
-                  onChange={(e) => setBarcode(e.target.value)}
-                  placeholder="Введите штрихкод"
-                />
-
-                <div className="button-row">
-                  <button type="button" className="primary" onClick={handleValidateBarcode}>
-                    Проверить
-                  </button>
-                  <button type="button" className="secondary" onClick={handleScanLibrary}>
-                    {isScanning ? 'Камера активна' : 'Сканировать камерой'}
-                  </button>
-                  <button type="button" className="ghost" onClick={handleStopScan}>
-                    Стоп
-                  </button>
-                </div>
-
-                {scanResult && <div className="success-box">{scanResult}</div>}
-                {scanError && <div className="error-box">{scanError}</div>}
-              </div>
-            </div>
-          </section>
-        )}
-
-        {activeTab === 'nutrition' && (
-          <section className="panel">
-            <div className="panel-header">
-              <h2>Калькулятор КБЖУ</h2>
-              <span className="tag">IOM / Schofield / РФ</span>
-            </div>
-
-            <div className="nutrition-grid">
-              <div className="form-grid">
-                <label>
-                  Возраст, мес
-                  <input
-                    type="number"
-                    value={nutritionState.ageMonths}
-                    onChange={(e) =>
-                      setNutritionState((prev) => ({
-                        ...prev,
-                        ageMonths: Number(e.target.value)
-                      }))
-                    }
-                  />
-                </label>
-
-                <label>
-                  Пол
-                  <select
-                    value={nutritionState.sex}
-                    onChange={(e) =>
-                      setNutritionState((prev) => ({
-                        ...prev,
-                        sex: e.target.value as 'm' | 'f'
-                      }))
-                    }
-                  >
-                    <option value="m">Мальчик</option>
-                    <option value="f">Девочка</option>
-                  </select>
-                </label>
-
-                <label>
-                  Вес, кг
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={nutritionState.weightKg}
-                    onChange={(e) =>
-                      setNutritionState((prev) => ({
-                        ...prev,
-                        weightKg: Number(e.target.value)
-                      }))
-                    }
-                  />
-                </label>
-
-                <label>
-                  Рост, см
-                  <input
-                    type="number"
-                    step="0.1"
-                    value={nutritionState.heightCm}
-                    onChange={(e) =>
-                      setNutritionState((prev) => ({
-                        ...prev,
-                        heightCm: Number(e.target.value)
-                      }))
-                    }
-                  />
-                </label>
-
-                <label>
-                  Активность
-                  <select
-                    value={nutritionState.activity}
-                    onChange={(e) =>
-                      setNutritionState((prev) => ({
-                        ...prev,
-                        activity: e.target.value as 'low' | 'moderate' | 'high'
-                      }))
-                    }
-                  >
-                    <option value="low">Низкая</option>
-                    <option value="moderate">Средняя</option>
-                    <option value="high">Высокая</option>
-                  </select>
-                </label>
-
-                <label>
-                  Нормы
-                  <select
-                    value={nutritionState.norms}
-                    onChange={(e) =>
-                      setNutritionState((prev) => ({
-                        ...prev,
-                        norms: e.target.value as 'ru' | 'efsa'
-                      }))
-                    }
-                  >
-                    <option value="ru">РФ</option>
-                    <option value="efsa">EFSA</option>
-                  </select>
-                </label>
-              </div>
-
-              <div className="result-box">
-                <button type="button" className="primary" onClick={calculateNutritionForForm}>
-                  Рассчитать
-                </button>
-
-                {nutritionResult && (
-                  <>
-                    <div className="summary-grid">
-                      <div>
-                        <span>Ккал</span>
-                        <strong>{nutritionResult.kcal}</strong>
-                      </div>
-                      <div>
-                        <span>Белок</span>
-                        <strong>{nutritionResult.proteinG} г</strong>
-                      </div>
-                      <div>
-                        <span>Жиры</span>
-                        <strong>{nutritionResult.fatG} г</strong>
-                      </div>
-                      <div>
-                        <span>Углеводы</span>
-                        <strong>{nutritionResult.carbsG} г</strong>
-                      </div>
-                      <div>
-                        <span>BMI</span>
-                        <strong>{nutritionResult.bmi}</strong>
-                      </div>
-                    </div>
-
-                    <div className="micro-list">
-                      {nutritionResult.micro.map((item) => (
-                        <div key={item.key} className="micro-item">
-                          <span>{item.label}</span>
-                          <strong>
-                            {item.value} {item.unit}
-                          </strong>
-                        </div>
-                      ))}
-                    </div>
-
-                    {nutritionResult.warnings.length > 0 && (
-                      <div className="warning-box">
-                        {nutritionResult.warnings.map((warning, index) => (
-                          <div key={index}>⚠️ {warning}</div>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-          </section>
-        )}
-
-        {activeTab === 'rules' && (
-          <section className="panel">
-            <div className="panel-header">
-              <h2>Клинические правила подбора смеси</h2>
-              <span className="tag">Детерминированный алгоритм</span>
-            </div>
-
-            <div className="rules-grid">
-              <div className="checkbox-list">
-                <label className="check">
-                  <input
-                    type="checkbox"
-                    checked={symptoms.hasRedFlags}
-                    onChange={() => toggleSymptom('hasRedFlags')}
-                  />
-                  Красные флаги
-                </label>
-
-                <label className="check">
-                  <input
-                    type="checkbox"
-                    checked={symptoms.cmpaSuspicion}
-                    onChange={() => toggleSymptom('cmpaSuspicion')}
-                  />
-                  Подозрение на АБКМ
-                </label>
-
-                <label className="check">
-                  <input
-                    type="checkbox"
-                    checked={symptoms.severeAllergy}
-                    onChange={() => toggleSymptom('severeAllergy')}
-                  />
-                  Тяжёлая аллергия
-                </label>
-
-                <label className="check">
-                  <input
-                    type="checkbox"
-                    checked={symptoms.colicAndConstipation}
-                    onChange={() => toggleSymptom('colicAndConstipation')}
-                  />
-                  Колики и запоры
-                </label>
-
-                <label className="check">
-                  <input
-                    type="checkbox"
-                    checked={symptoms.regurgitation}
-                    onChange={() => toggleSymptom('regurgitation')}
-                  />
-                  Частые срыгивания
-                </label>
-
-                <label className="check">
-                  <input
-                    type="checkbox"
-                    checked={symptoms.lactoseIntolerance}
-                    onChange={() => toggleSymptom('lactoseIntolerance')}
-                  />
-                  Лактозная непереносимость
-                </label>
-              </div>
-
-              <div className="result-box">
-                <button type="button" className="primary" onClick={handleRuleCheck}>
-                  Оценить
-                </button>
-
-                {ruleResult && (
-                  <div
-                    className={ruleResult.status === 'EMERGENCY_STOP' ? 'alert danger' : 'alert success'}
-                  >
-                    <h3>
-                      {ruleResult.status === 'EMERGENCY_STOP' ? 'ЭКСТРЕННЫЙ СТОП' : 'Рекомендация'}
-                    </h3>
-
-                    {ruleResult.categoryName && (
-                      <div className="recommendation-name">{ruleResult.categoryName}</div>
-                    )}
-
-                    {ruleResult.alert && <p>{ruleResult.alert}</p>}
-                    <p>{ruleResult.explanation}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </section>
-        )}
-
-        {activeTab === 'catalog' && (
-          <section className="panel">
-            <div className="panel-header">
-              <h2>Каталог смесей</h2>
-              <span className="tag">{filteredProducts.length} продуктов</span>
-            </div>
-
-            <div className="catalog-toolbar">
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Поиск по названию, бренду или категории"
-              />
-
-              <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
-                <option value="all">Все категории</option>
-                <option value="standard">Стандартная</option>
-                <option value="comfort">Комфорт</option>
-                <option value="ha_phf">Гипоаллергенная</option>
-                <option value="ehf">Глубокий гидролизат</option>
-                <option value="aaf">Аминокислотная</option>
-                <option value="ar">Антирефлюксная</option>
-                <option value="lactose_free">Безлактозная</option>
+          {mode === 'payment' && (
+            <label>
+              Тариф
+              <select value={plan} onChange={(e) => setPlan(e.target.value as any)} style={{ width: '100%', padding: 10 }}>
+                <option value="monthly">Месяц — 499 ₽</option>
+                <option value="quarterly">Квартал — 1499 ₽</option>
+                <option value="yearly">Год — 3999 ₽</option>
               </select>
-            </div>
+            </label>
+          )}
 
-            <div className="product-grid">
-              {filteredProducts.map((product) => (
-                <article key={product.id} className="product-card">
-                  <div className="product-top">
-                    <div>
-                      <strong>{product.name}</strong>
-                      <small>{product.brand}</small>
-                    </div>
-                    <span className={`badge ${product.categoryCode}`}>{product.category}</span>
-                  </div>
+          {mode === 'register' && (
+            <button style={{ padding: 12, fontWeight: 700 }} onClick={register}>Зарегистрироваться</button>
+          )}
 
-                  <ul className="product-specs">
-                    <li>Стадия: {product.stage}</li>
-                    <li>Калорийность: {product.kcal} ккал/100мл</li>
-                    <li>Белок: {product.protein} г</li>
-                    <li>Жиры: {product.fat} г</li>
-                    <li>Углеводы: {product.carbs} г</li>
-                    <li>Кальций: {product.calcium} мг</li>
-                    <li>Железо: {product.iron} мг</li>
-                    <li>Витамин D: {product.vitaminD} мкг</li>
-                  </ul>
+          {mode === 'login' && (
+            <button style={{ padding: 12, fontWeight: 700 }} onClick={login}>Войти</button>
+          )}
 
-                  {product.barcode && (
-                    <div className="barcode-inline">
-                      <span>ШК</span>
-                      <strong>{product.barcode}</strong>
-                    </div>
-                  )}
-                </article>
-              ))}
-            </div>
-          </section>
-        )}
-      </main>
+          {mode === 'payment' && (
+            <>
+              <button style={{ padding: 12, fontWeight: 700 }} onClick={requestPayment}>Получить инструкцию оплаты</button>
+              <button style={{ padding: 12, fontWeight: 700 }} onClick={confirmPayment}>Подтвердить оплату</button>
+              <button style={{ padding: 12, fontWeight: 700 }} onClick={checkLicense}>Проверить лицензию</button>
+            </>
+          )}
+        </div>
+      )}
+
+      {license && (
+        <div style={{ marginTop: 24, border: '1px solid #ddd', borderRadius: 12, padding: 16 }}>
+          <h3>Активная лицензия</h3>
+          <p><strong>Key:</strong> {license.key}</p>
+          <p><strong>Тариф:</strong> {license.plan}</p>
+          <p><strong>Статус:</strong> {license.status}</p>
+          <p><strong>До:</strong> {license.expiresAt}</p>
+        </div>
+      )}
     </div>
   );
 }
