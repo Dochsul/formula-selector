@@ -8,7 +8,6 @@ const port = Number(process.env.PORT ?? 4000);
 app.use(cors());
 app.use(express.json());
 
-// In-memory storage (replace with Supabase in production)
 const USERS: Array<{
   id: string;
   email: string;
@@ -123,6 +122,38 @@ app.get('/api/licenses/me', (req, res) => {
   return res.json({ user: { id: user.id, email: user.email }, licenses });
 });
 
+app.post('/api/billing/instruction', (req, res) => {
+  const { email, plan } = req.body ?? {};
+
+  if (!email || !plan) {
+    return res.status(400).json({ error: 'Email and plan are required' });
+  }
+
+  const user = USERS.find((u) => u.email.toLowerCase() === String(email).toLowerCase());
+  if (!user) {
+    return res.status(404).json({ error: 'User not found. Please register first.' });
+  }
+
+  const validPlans = ['monthly', 'quarterly', 'yearly'];
+  const normalizedPlan = String(plan).toLowerCase();
+
+  if (!validPlans.includes(normalizedPlan)) {
+    return res.status(400).json({ error: 'Invalid plan' });
+  }
+
+  const amount = PLAN_PRICE[normalizedPlan as keyof typeof PLAN_PRICE];
+
+  return res.json({
+    email: user.email,
+    plan: normalizedPlan,
+    amount,
+    currency: 'RUB',
+    account: 'Личный счёт / карта владельца продукта',
+    instructions: 'Пришлите оплату и подтвердите её в системе. После подтверждения будет выдан ключ лицензии.',
+    status: 'waiting_for_payment'
+  });
+});
+
 app.post('/api/payment/manual-confirm', (req, res) => {
   const { email, plan } = req.body ?? {};
 
@@ -138,12 +169,11 @@ app.post('/api/payment/manual-confirm', (req, res) => {
   }
 
   const user = USERS.find((u) => u.email.toLowerCase() === String(email).toLowerCase());
-
   if (!user) {
     return res.status(404).json({ error: 'User not found. Please register first.' });
   }
 
-  const record = {
+  const payment = {
     id: randomUUID(),
     userId: user.id,
     email: user.email,
@@ -155,7 +185,7 @@ app.post('/api/payment/manual-confirm', (req, res) => {
     confirmedAt: new Date().toISOString()
   };
 
-  PAYMENTS.push(record);
+  PAYMENTS.push(payment);
 
   const existingActive = LICENSES.find(
     (l) => l.userId === user.id && l.status === 'active'
@@ -183,40 +213,9 @@ app.post('/api/payment/manual-confirm', (req, res) => {
   LICENSES.push(license);
 
   return res.status(201).json({
-    payment: record,
+    payment,
     license,
     message: 'Payment confirmed and license activated successfully.'
-  });
-});
-
-app.post('/api/license/request', (req, res) => {
-  const { email, plan } = req.body ?? {};
-
-  if (!email || !plan) {
-    return res.status(400).json({ error: 'Email and plan are required' });
-  }
-
-  const user = USERS.find((u) => u.email.toLowerCase() === String(email).toLowerCase());
-  if (!user) {
-    return res.status(404).json({ error: 'User not found. Please register first.' });
-  }
-
-  const validPlans = ['monthly', 'quarterly', 'yearly'];
-  const normalizedPlan = String(plan).toLowerCase();
-
-  if (!validPlans.includes(normalizedPlan)) {
-    return res.status(400).json({ error: 'Invalid plan' });
-  }
-
-  const amount = PLAN_PRICE[normalizedPlan as keyof typeof PLAN_PRICE];
-
-  return res.json({
-    email: user.email,
-    plan: normalizedPlan,
-    amount,
-    currency: 'RUB',
-    billingInstruction: 'Please pay the amount to the provided personal account and then confirm payment via /api/payment/manual-confirm',
-    status: 'waiting_for_payment'
   });
 });
 
@@ -229,17 +228,14 @@ app.get('/api/license/check', (req, res) => {
   }
 
   const license = LICENSES.find(
-    (l) => l.email === email.toLowerCase() && l.key === key && l.status === 'active'
+    (l) => l.email === email && l.key === key && l.status === 'active'
   );
 
   if (!license) {
     return res.status(403).json({ valid: false, message: 'License is not active or key is invalid' });
   }
 
-  const expiresAt = new Date(license.expiresAt);
-  const now = new Date();
-
-  if (expiresAt < now) {
+  if (new Date(license.expiresAt) < new Date()) {
     license.status = 'expired';
     return res.status(403).json({ valid: false, message: 'License expired' });
   }
@@ -253,20 +249,18 @@ app.get('/api/license/check', (req, res) => {
   });
 });
 
-// Admin endpoints
 app.get('/api/admin/payments', (_req, res) => {
-  return res.json({ payments: PAYMENTS });
+  res.json({ payments: PAYMENTS });
 });
 
 app.get('/api/admin/licenses', (_req, res) => {
-  return res.json({ licenses: LICENSES });
+  res.json({ licenses: LICENSES });
 });
 
 app.get('/api/admin/users', (_req, res) => {
-  return res.json({ users: USERS.map(u => ({ id: u.id, email: u.email, createdAt: u.createdAt })) });
+  res.json({ users: USERS.map((u) => ({ id: u.id, email: u.email, createdAt: u.createdAt })) });
 });
 
 app.listen(port, () => {
   console.log(`License backend running on http://localhost:${port}`);
-  console.log(`Health check: http://localhost:${port}/health`);
 });
