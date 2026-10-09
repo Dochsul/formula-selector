@@ -8,6 +8,7 @@ const port = Number(process.env.PORT ?? 4000);
 app.use(cors());
 app.use(express.json());
 
+// In-memory storage (replace with Supabase in production)
 const USERS: Array<{
   id: string;
   email: string;
@@ -252,6 +253,20 @@ app.get('/api/license/check', (req, res) => {
   });
 });
 
+// Admin endpoints
+app.get('/api/admin/payments', (_req, res) => {
+  return res.json({ payments: PAYMENTS });
+});
+
+app.get('/api/admin/licenses', (_req, res) => {
+  return res.json({ licenses: LICENSES });
+});
+
+app.get('/api/admin/users', (_req, res) => {
+  return res.json({ users: USERS.map(u => ({ id: u.id, email: u.email, createdAt: u.createdAt })) });
+});
+
 app.listen(port, () => {
   console.log(`License backend running on http://localhost:${port}`);
+  console.log(`Health check: http://localhost:${port}/health`);
 });
