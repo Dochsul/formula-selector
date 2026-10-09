@@ -14,10 +14,10 @@ type License = {
   createdAt: string;
 };
 
-type AppMode = 'auth' | 'dashboard' | 'admin';
+type View = 'auth' | 'dashboard' | 'admin';
 
 export default function App() {
-  const [mode, setMode] = useState<AppMode>('auth');
+  const [view, setView] = useState<View>('auth');
   const [email, setEmail] = useState('user@example.com');
   const [password, setPassword] = useState('123456');
   const [plan, setPlan] = useState<'monthly' | 'quarterly' | 'yearly'>('monthly');
@@ -29,8 +29,11 @@ export default function App() {
 
   const fetchLicense = async (targetEmail: string) => {
     try {
-      const response = await fetch(`${API_URL}/api/licenses/me?email=${encodeURIComponent(targetEmail)}`);
+      const response = await fetch(
+        `${API_URL}/api/licenses/me?email=${encodeURIComponent(targetEmail)}`
+      );
       const data = await response.json();
+
       if (!response.ok) {
         setLicense(null);
         return;
@@ -61,14 +64,13 @@ export default function App() {
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || 'Не удалось зарегистрироваться');
+        throw new Error(data.error || 'Registration failed');
       }
 
-      setMessage(`Пользователь ${data.email} создан. Теперь войдите в систему.`);
-      setMode('auth');
+      setMessage(`Пользователь ${data.email} создан. Теперь войдите.`);
       setPassword('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка регистрации');
+      setError(err instanceof Error ? err.message : 'Registration error');
     } finally {
       setLoading(false);
     }
@@ -88,20 +90,20 @@ export default function App() {
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || 'Ошибка входа');
+        throw new Error(data.error || 'Login failed');
       }
 
       if (data.activeLicense) {
         setLicense(data.activeLicense);
-        setMode('dashboard');
+        setView('dashboard');
         setMessage('Лицензия активна. Добро пожаловать.');
       } else {
         setLicense(null);
-        setMode('dashboard');
-        setMessage('Лицензия не активна. Выберите тариф и оплатите доступ.');
+        setView('dashboard');
+        setMessage('Лицензия отсутствует. Выберите тариф и оплатите доступ.');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка входа');
+      setError(err instanceof Error ? err.message : 'Login error');
     } finally {
       setLoading(false);
     }
@@ -121,14 +123,14 @@ export default function App() {
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || 'Не удалось получить инструкцию оплаты');
+        throw new Error(data.error || 'Payment instruction failed');
       }
 
       setMessage(
-        `Сумма к оплате: ${data.amount} ₽.\n\nСчёт: ${data.account}\nИнструкция: ${data.instructions}`
+        `Сумма к оплате: ${data.amount} ₽\n\nСчёт: ${data.account}\nИнструкция: ${data.instructions}`
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка получения инструкции');
+      setError(err instanceof Error ? err.message : 'Payment instruction error');
     } finally {
       setLoading(false);
     }
@@ -148,13 +150,13 @@ export default function App() {
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || 'Не удалось подтвердить оплату');
+        throw new Error(data.error || 'Payment confirmation failed');
       }
 
       setLicense(data.license);
       setMessage(`✅ Оплата подтверждена. Ваш ключ: ${data.license.key}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка подтверждения оплаты');
+      setError(err instanceof Error ? err.message : 'Payment confirmation error');
     } finally {
       setLoading(false);
     }
@@ -167,15 +169,18 @@ export default function App() {
     }
 
     try {
-      const response = await fetch(`${API_URL}/api/license/check?email=${encodeURIComponent(email)}&key=${encodeURIComponent(license.key)}`);
+      const response = await fetch(
+        `${API_URL}/api/license/check?email=${encodeURIComponent(email)}&key=${encodeURIComponent(license.key)}`
+      );
       const data = await response.json();
+
       if (!response.ok) {
-        throw new Error(data.message || 'Лицензия не действительна');
+        throw new Error(data.message || 'License invalid');
       }
 
       setMessage(`✅ Лицензия активна до ${data.expiresAt}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка проверки лицензии');
+      setError(err instanceof Error ? err.message : 'License check error');
     }
   };
 
@@ -202,218 +207,271 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (mode === 'dashboard' && email) {
+    if (view === 'dashboard' && email) {
       fetchLicense(email);
     }
-  }, [mode, email]);
+  }, [view, email]);
 
   useEffect(() => {
-    if (mode === 'admin') {
+    if (view === 'admin') {
       loadAdminData();
     }
-  }, [mode]);
+  }, [view]);
 
-  const authCard = (
-    <div className="auth-shell">
-      <div className="auth-card">
-        <div className="auth-header">
-          <div className="brand-mark">F</div>
-          <div>
-            <h1>Formula Selector</h1>
-            <p>Личный доступ к сервису</p>
-          </div>
-        </div>
-
-        <div className="switcher">
-          <button className={mode === 'auth' ? 'switch active' : 'switch'} onClick={() => setMode('auth')}>
-            Вход
-          </button>
-          <button className="switch" onClick={() => setMode('auth')}>
-            Регистрация
-          </button>
-        </div>
-
-        <div className="form-grid single">
-          <label>
-            Email
-            <input value={email} onChange={(e) => setEmail(e.target.value)} />
-          </label>
-          <label>
-            Пароль
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          </label>
-        </div>
-
-        {error && <div className="alert danger"><strong>Ошибка:</strong> {error}</div>}
-        {message && <div className="alert success"><strong>Уведомление:</strong> {message}</div>}
-
-        <div className="button-row">
-          <button className="primary" onClick={login} disabled={loading}>
-            {loading ? 'Подождите...' : 'Войти'}
-          </button>
-          <button className="secondary" onClick={register} disabled={loading}>
-            Зарегистрироваться
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
-  const dashboardCard = (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="brand">
-          <div className="brand-mark">F</div>
-          <div>
-            <strong>Formula Selector</strong>
-            <small>Личный кабинет</small>
-          </div>
-        </div>
-        <div className="tabs">
-          <button className="tab active" onClick={() => setMode('dashboard')}>Лицензия</button>
-          <button className="tab" onClick={() => setMode('admin')}>Админ</button>
-          <button className="tab" onClick={() => { setMode('auth'); setLicense(null); setMessage(''); setError(''); }}>
-            Выход
-          </button>
-        </div>
-      </header>
-
-      <div className="content">
-        <section className="panel">
-          <div className="panel-header">
-            <h2>Доступ и лицензия</h2>
-            <span className="tag">{email}</span>
-          </div>
-
-          {error && <div className="alert danger"><strong>Ошибка:</strong> {error}</div>}
-          {message && <div className="alert success"><strong>Уведомление:</strong> {message}</div>}
-
-          {!license ? (
-            <div className="form-grid">
-              <label>
-                Тариф
-                <select value={plan} onChange={(e) => setPlan(e.target.value as 'monthly' | 'quarterly' | 'yearly')}>
-                  <option value="monthly">Месяц — 499 ₽</option>
-                  <option value="quarterly">Квартал — 1499 ₽</option>
-                  <option value="yearly">Год — 3999 ₽</option>
-                </select>
-              </label>
-              <div className="summary-grid">
-                <div>
-                  <span>Сумма</span>
-                  <strong>{plan === 'monthly' ? '499 ₽' : plan === 'quarterly' ? '1499 ₽' : '3999 ₽'}</strong>
-                </div>
-                <div>
-                  <span>Срок</span>
-                  <strong>{plan === 'monthly' ? '30 дней' : plan === 'quarterly' ? '90 дней' : '365 дней'}</strong>
-                </div>
+  return (
+    <div className="page">
+      {view === 'auth' && (
+        <div className="auth-shell">
+          <div className="auth-card">
+            <div className="brand-header">
+              <div className="brand-mark">F</div>
+              <div>
+                <h1>Formula Selector</h1>
+                <p>Личный доступ к сервису</p>
               </div>
             </div>
-          ) : (
-            <div className="success-box">
-              <div className="recommendation-name">Ключ лицензии</div>
-              <div className="barcode-inline">
-                <span>{license.key}</span>
-                <button className="ghost" onClick={() => navigator.clipboard.writeText(license.key)}>Копировать</button>
-              </div>
-              <div className="summary-grid" style={{ marginTop: 16 }}>
-                <div>
-                  <span>Тариф</span>
-                  <strong>{license.plan}</strong>
-                </div>
-                <div>
-                  <span>Активна до</span>
-                  <strong>{new Date(license.expiresAt).toLocaleDateString('ru-RU')}</strong>
-                </div>
-              </div>
+
+            <div className="switcher">
+              <button className="switch active">Вход</button>
+              <button className="switch" onClick={register}>Регистрация</button>
             </div>
-          )}
 
-          <div className="button-row" style={{ marginTop: 18 }}>
-            {!license && (
-              <>
-                <button className="primary" onClick={requestPayment} disabled={loading}>Получить инструкцию оплаты</button>
-                <button className="secondary" onClick={confirmPayment} disabled={loading}>Подтвердить оплату</button>
-              </>
-            )}
-            {license && <button className="primary" onClick={checkLicense}>Проверить лицензию</button>}
-          </div>
-        </section>
-      </div>
-    </div>
-  );
+            <div className="field">
+              <label>Email</label>
+              <input value={email} onChange={(e) => setEmail(e.target.value)} />
+            </div>
 
-  const adminCard = (
-    <div className="app-shell admin-shell">
-      <header className="topbar">
-        <div className="brand">
-          <div className="brand-mark">A</div>
-          <div>
-            <strong>Админ-панель</strong>
-            <small>Управление лицензиями</small>
+            <div className="field">
+              <label>Пароль</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+
+            {error && <div className="alert danger">{error}</div>}
+            {message && <div className="alert success">{message}</div>}
+
+            <div className="button-row">
+              <button className="primary" onClick={login} disabled={loading}>
+                {loading ? 'Подождите...' : 'Войти'}
+              </button>
+              <button className="secondary" onClick={register} disabled={loading}>
+                Зарегистрироваться
+              </button>
+            </div>
           </div>
         </div>
-        <div className="tabs">
-          <button className="tab" onClick={() => setMode('dashboard')}>Личный кабинет</button>
-          <button className="tab active" onClick={() => setMode('admin')}>Админ</button>
-          <button className="tab" onClick={() => { setMode('auth'); setLicense(null); setMessage(''); setError(''); }}>Выход</button>
-        </div>
-      </header>
+      )}
 
-      <div className="content admin-content">
-        <section className="panel">
-          <div className="panel-header">
-            <h2>Пользователи</h2>
-            <button className="secondary" onClick={loadAdminData}>Обновить</button>
-          </div>
-
-          {!adminData ? (
-            <div className="loading">Загрузка...</div>
-          ) : (
-            <div>
-              <div className="stat-grid">
-                <div className="stat-card">
-                  <span>Пользователи</span>
-                  <strong>{adminData.users.length}</strong>
-                </div>
-                <div className="stat-card">
-                  <span>Платежи</span>
-                  <strong>{adminData.payments.length}</strong>
-                </div>
-                <div className="stat-card">
-                  <span>Лицензии</span>
-                  <strong>{adminData.licenses.length}</strong>
-                </div>
-              </div>
-
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Email</th>
-                      <th>Статус</th>
-                      <th>Ключ</th>
-                      <th>Дата</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {adminData.licenses.map((item: any) => (
-                      <tr key={item.id}>
-                        <td>{item.email}</td>
-                        <td>{item.status}</td>
-                        <td className="mono">{item.key}</td>
-                        <td>{new Date(item.expiresAt).toLocaleDateString('ru-RU')}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+      {view === 'dashboard' && (
+        <div className="app-shell">
+          <header className="topbar">
+            <div className="brand">
+              <div className="brand-mark">F</div>
+              <div>
+                <strong>Formula Selector</strong>
+                <small>Личный кабинет</small>
               </div>
             </div>
-          )}
-        </section>
-      </div>
+
+            <div className="tabs">
+              <button className="tab active">Лицензия</button>
+              <button className="tab" onClick={() => setView('admin')}>Админ</button>
+              <button
+                className="tab"
+                onClick={() => {
+                  setView('auth');
+                  setLicense(null);
+                  setMessage('');
+                  setError('');
+                }}
+              >
+                Выход
+              </button>
+            </div>
+          </header>
+
+          <main className="content">
+            <section className="panel">
+              <div className="panel-header">
+                <h2>Доступ и лицензия</h2>
+                <span className="tag">{email}</span>
+              </div>
+
+              {error && <div className="alert danger">{error}</div>}
+              {message && <div className="alert success">{message}</div>}
+
+              {!license ? (
+                <div className="grid">
+                  <label className="field">
+                    Тариф
+                    <select
+                      value={plan}
+                      onChange={(e) =>
+                        setPlan(e.target.value as 'monthly' | 'quarterly' | 'yearly')
+                      }
+                    >
+                      <option value="monthly">Месяц — 499 ₽</option>
+                      <option value="quarterly">Квартал — 1499 ₽</option>
+                      <option value="yearly">Год — 3999 ₽</option>
+                    </select>
+                  </label>
+
+                  <div className="stats">
+                    <div className="stat">
+                      <span>Сумма</span>
+                      <strong>
+                        {plan === 'monthly'
+                          ? '499 ₽'
+                          : plan === 'quarterly'
+                            ? '1499 ₽'
+                            : '3999 ₽'}
+                      </strong>
+                    </div>
+                    <div className="stat">
+                      <span>Срок</span>
+                      <strong>
+                        {plan === 'monthly'
+                          ? '30 дней'
+                          : plan === 'quarterly'
+                            ? '90 дней'
+                            : '365 дней'}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="license-box">
+                  <div className="license-title">Ключ лицензии</div>
+                  <div className="license-key-box">
+                    <span>{license.key}</span>
+                    <button
+                      className="ghost"
+                      onClick={() => navigator.clipboard.writeText(license.key)}
+                    >
+                      Копировать
+                    </button>
+                  </div>
+
+                  <div className="stats" style={{ marginTop: 18 }}>
+                    <div className="stat">
+                      <span>Тариф</span>
+                      <strong>{license.plan}</strong>
+                    </div>
+                    <div className="stat">
+                      <span>Активна до</span>
+                      <strong>{new Date(license.expiresAt).toLocaleDateString('ru-RU')}</strong>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="button-row" style={{ marginTop: 20 }}>
+                {!license && (
+                  <>
+                    <button className="primary" onClick={requestPayment} disabled={loading}>
+                      Получить инструкцию оплаты
+                    </button>
+                    <button className="secondary" onClick={confirmPayment} disabled={loading}>
+                      Подтвердить оплату
+                    </button>
+                  </>
+                )}
+                {license && (
+                  <button className="primary" onClick={checkLicense}>
+                    Проверить лицензию
+                  </button>
+                )}
+              </div>
+            </section>
+          </main>
+        </div>
+      )}
+
+      {view === 'admin' && (
+        <div className="app-shell admin-shell">
+          <header className="topbar">
+            <div className="brand">
+              <div className="brand-mark">A</div>
+              <div>
+                <strong>Админ-панель</strong>
+                <small>Управление лицензиями</small>
+              </div>
+            </div>
+
+            <div className="tabs">
+              <button className="tab" onClick={() => setView('dashboard')}>Личный кабинет</button>
+              <button className="tab active">Админ</button>
+              <button
+                className="tab"
+                onClick={() => {
+                  setView('auth');
+                  setLicense(null);
+                  setError('');
+                  setMessage('');
+                }}
+              >
+                Выход
+              </button>
+            </div>
+          </header>
+
+          <main className="content">
+            <section className="panel">
+              <div className="panel-header">
+                <h2>Пользователи и лицензии</h2>
+                <button className="secondary" onClick={loadAdminData}>Обновить</button>
+              </div>
+
+              {!adminData ? (
+                <div className="loading">Загрузка...</div>
+              ) : (
+                <>
+                  <div className="stats">
+                    <div className="stat">
+                      <span>Пользователи</span>
+                      <strong>{adminData.users.length}</strong>
+                    </div>
+                    <div className="stat">
+                      <span>Платежи</span>
+                      <strong>{adminData.payments.length}</strong>
+                    </div>
+                    <div className="stat">
+                      <span>Лицензии</span>
+                      <strong>{adminData.licenses.length}</strong>
+                    </div>
+                  </div>
+
+                  <div className="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Email</th>
+                          <th>Статус</th>
+                          <th>Ключ</th>
+                          <th>Действует до</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {adminData.licenses.map((item: any) => (
+                          <tr key={item.id}>
+                            <td>{item.email}</td>
+                            <td>{item.status}</td>
+                            <td className="mono">{item.key}</td>
+                            <td>{new Date(item.expiresAt).toLocaleDateString('ru-RU')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </section>
+          </main>
+        </div>
+      )}
     </div>
   );
-
-  return mode === 'auth' ? authCard : mode === 'dashboard' ? dashboardCard : adminCard;
 }
